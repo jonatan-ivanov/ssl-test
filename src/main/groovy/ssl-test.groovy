@@ -2,6 +2,8 @@
 
 import javax.net.ssl.*
 import java.io.*
+import java.security.*
+import java.security.cert.*
 import groovy.cli.picocli.*
 
 /**
@@ -13,6 +15,7 @@ cli.with {
     _ longOpt: 'trustStore', args: 1, required: false, argName: 'trustStore', ''
     _ longOpt: 'trustStorePassword', args: 1, required: false, argName: 'trustStorePassword', ''
     v longOpt: 'verbose', ''
+    _ longOpt: 'insecure', 'Disabe ssl verification and proceed without checking'
 }
 
 OptionAccessor options = cli.parse(args)
@@ -25,7 +28,6 @@ def hostAndPort = options.arguments().first().split(':')
 String host = hostAndPort[0]
 int port = Integer.parseInt(hostAndPort[1])
 
-HttpsURLConnection.setDefaultHostnameVerifier({ hostname, session -> true })
 if (options.trustStore) {
     System.setProperty('javax.net.ssl.trustStore', options.trustStore)
     System.setProperty('javax.net.ssl.trustStorePassword', options.trustStorePassword)
@@ -34,7 +36,23 @@ if (options.verbose) System.setProperty('javax.net.debug', 'all')
 
 println "Using Java ${System.properties.'java.runtime.version'} from ${System.properties.'java.home'}\n"
 
-SSLSocketFactory sslSocketFactory = SSLSocketFactory.getDefault()
+class TrustAllX509TrustManager implements X509TrustManager {
+    public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+    public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0] }
+}
+
+SSLSocketFactory sslSocketFactory;
+if (options.insecure) {
+    println 'INSECURE CONNECTION!!!'
+    SSLContext sslcontext = SSLContext.getInstance('SSL')
+    sslcontext.init(null, new X509TrustManager[] { new TrustAllX509TrustManager() }, new SecureRandom())
+    sslSocketFactory = sslcontext.getSocketFactory()
+}
+else {
+    sslSocketFactory = SSLSocketFactory.getDefault()
+}
+
 SSLSocket sslSocket = (SSLSocket) sslSocketFactory.createSocket(host, port)
 
 println "Client Supported Protocols($sslSocket.supportedProtocols.length): $sslSocket.supportedProtocols"
